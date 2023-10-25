@@ -2,11 +2,13 @@ package cmd
 
 import (
 	"fmt"
+	"os"
+	"sync/atomic"
+
 	"github.com/mohibeyki/storage-bench/runner"
 	"github.com/mohibeyki/storage-bench/writer"
 	"github.com/spf13/cobra"
-	"os"
-	"sync/atomic"
+	"github.com/spf13/viper"
 )
 
 var rootCmd = &cobra.Command{
@@ -15,53 +17,73 @@ var rootCmd = &cobra.Command{
 	Long: `Storage Benchmark is a simple storage benchmark tool (duh)
 It supports local filesystem and s3 storage`,
 	Run: func(cmd *cobra.Command, args []string) {
-		var path string
-		var files uint64
-		var size uint64
-		var threads uint64
 		var err error
-
-		if path, err = cmd.PersistentFlags().GetString("path"); err != nil {
-			_ = fmt.Errorf("could not parse Path from arguments. [%s]\n", err)
-			return
-		}
-
-		if files, err = cmd.PersistentFlags().GetUint64("files"); err != nil {
-			_ = fmt.Errorf("could not parse files from arguments. [%s]\n", err)
-			return
-		}
-
-		if size, err = cmd.PersistentFlags().GetUint64("size"); err != nil {
-			_ = fmt.Errorf("could not parse size from arguments. [%s]\n", err)
-			return
-		}
-
-		if threads, err = cmd.PersistentFlags().GetUint64("threads"); err != nil {
-			_ = fmt.Errorf("could not parse threads from arguments. [%s]\n", err)
-			return
-		}
-
 		var total atomic.Uint64
-		var fsWriter writer.FSWriter
-		runner := runner.Runner{Path: path, Files: files, Size: size, Threads: threads, Total: &total, Writer: &fsWriter}
+		runner := runner.Runner{Total: &total}
+
+		if runner.Path, err = cmd.PersistentFlags().GetString("path"); err != nil {
+			_ = fmt.Errorf("could not parse Path from arguments. [%s]", err)
+			panic(err)
+		}
+
+		if runner.Files, err = cmd.PersistentFlags().GetUint64("files"); err != nil {
+			_ = fmt.Errorf("could not parse files from arguments. [%s]", err)
+			panic(err)
+		}
+
+		if runner.Threads, err = cmd.PersistentFlags().GetUint64("threads"); err != nil {
+			_ = fmt.Errorf("could not parse threads from arguments. [%s]", err)
+			panic(err)
+		}
+
+		if runner.Size, err = cmd.PersistentFlags().GetUint64("size"); err != nil {
+			_ = fmt.Errorf("could not parse size from arguments. [%s]", err)
+			panic(err)
+		}
+
+		// Input size is in KiB
+		runner.Size *= 1024
+
+		var s3 bool
+		if s3, err = cmd.PersistentFlags().GetBool("s3"); err != nil {
+			_ = fmt.Errorf("could not parse size from arguments. [%s]", err)
+			panic(err)
+		}
+
+		if s3 {
+			runner.Writer = &writer.S3Writer{Bucket: viper.GetString("bucket"), Region: viper.GetString("region"), AccessKey: viper.GetString("accessKey"), SecretKey: viper.GetString("secretKey")}
+		} else {
+			runner.Writer = &writer.FSWriter{}
+		}
+
 		_ = runner.Run()
 
-		fmt.Printf("finished writing [%d] files", total.Load())
+		fmt.Printf("finished writing [%d] files\n", total.Load())
 	},
 }
 
-// Execute adds all child commands to the root command and sets flags appropriately.
-// This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() {
-	err := rootCmd.Execute()
-	if err != nil {
+	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}
 }
 
 func init() {
+	cobra.OnInitialize(initConfig)
+
 	rootCmd.PersistentFlags().StringP("path", "p", "/tmp/bench", "path to store files")
 	rootCmd.PersistentFlags().Uint64P("files", "f", 1024, "number of files to create")
-	rootCmd.PersistentFlags().Uint64P("size", "s", 1024, "size of each file in KiB")
+	rootCmd.PersistentFlags().Uint64P("size", "s", 1024, "size of each file in KiB, use numbers divisible by 64")
 	rootCmd.PersistentFlags().Uint64P("threads", "t", 8, "number of threads")
+	rootCmd.PersistentFlags().Bool("s3", false, "use s3 backend instead of file system")
+}
+
+func initConfig() {
+	viper.SetConfigName("config")
+	viper.SetConfigType("yaml")
+	viper.AddConfigPath("$HOME/.storage-bench")
+	viper.AddConfigPath(".")
+	if err := viper.ReadInConfig(); err != nil {
+		panic(fmt.Errorf("fatal error config file: %w", err))
+	}
 }

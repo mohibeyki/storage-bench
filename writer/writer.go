@@ -1,5 +1,7 @@
 package writer
 
+import "io"
+
 type Writer interface {
-	WriteFile(path string, size uint64, data []byte) error
+	WriteFile(path string, reader io.Reader) error
 }

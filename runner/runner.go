@@ -1,22 +1,22 @@
 package runner
 
 import (
-	"crypto/rand"
 	"fmt"
-	"github.com/mohibeyki/storage-bench/writer"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/mohibeyki/storage-bench/reader"
+	"github.com/mohibeyki/storage-bench/writer"
 )
 
 type Runner struct {
 	Path    string
 	Files   uint64
-	Size    uint64
 	Threads uint64
-	Data    []byte
+	Size    uint64
 	Total   *atomic.Uint64
 	Writer  writer.Writer
 }
@@ -39,12 +39,6 @@ func formatByteSize(bytes uint64) string {
 
 func (r *Runner) Run() error {
 	fmt.Printf("Running storage-bench with [%d] files of size [%s] using [%d] threads in [%s]\n", r.Files, formatByteSize(r.Size), r.Threads, r.Path)
-
-	data := make([]byte, 1024)
-	_, err := rand.Read(data)
-	if err != nil {
-		return err
-	}
 
 	// start timing
 	startTime := time.Now()
@@ -84,9 +78,7 @@ func (r *Runner) Run() error {
 		durationMS = 1
 	}
 
-	// input size is in 1KiB
-	byteSize := r.Size * 1024
-	fmt.Printf("files: [%d]\ttotal: [%s]\tduration: [%dms]\taverage: [%s/s]\n", r.Files, formatByteSize(r.Files*byteSize), durationMS, formatByteSize(r.Files*byteSize/uint64(durationMS)*1000))
+	fmt.Printf("files: [%d]\ttotal: [%s]\tduration: [%dms]\taverage: [%s/s]\n", r.Files, formatByteSize(r.Files*r.Size), durationMS, formatByteSize(r.Files*r.Size/uint64(durationMS)*1000))
 
 	return nil
 }
@@ -97,6 +89,8 @@ func (r *Runner) RunThread(name string) error {
 
 	for i := uint64(0); i < files; i++ {
 		var fileName strings.Builder
+		rr := reader.RandomReader{Size: r.Size}
+
 		fileName.WriteString(r.Path)
 		fileName.WriteString("/")
 		fileName.WriteString(name)
@@ -104,7 +98,7 @@ func (r *Runner) RunThread(name string) error {
 		fileName.WriteString(strconv.FormatUint(i, 10))
 		fileName.WriteString(".tmp")
 
-		if err = r.Writer.WriteFile(fileName.String(), r.Size, r.Data); err != nil {
+		if err = r.Writer.WriteFile(fileName.String(), &rr); err != nil {
 			return err
 		}
 
