@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"io"
 	"reflect"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -50,18 +48,24 @@ func (r *Runner) Run() error {
 	// start timing
 	startTime := time.Now()
 
+	jobs := make(chan string, r.Files)
+
 	var wg sync.WaitGroup
 	for i := uint64(0); i < r.Threads; i++ {
 		wg.Add(1)
 
-		go func(threadName string) {
-			if err := r.RunThread(threadName); err != nil {
+		go func() {
+			defer wg.Done()
+			if err := r.StartWorker(jobs); err != nil {
 				panic(err)
 			}
-
-			wg.Done()
-		}(strconv.FormatUint(i, 10))
+		}()
 	}
+
+	for i := uint64(0); i < r.Files; i++ {
+		jobs <- fmt.Sprintf("%s/%06d.tmp", r.Path, i)
+	}
+	close(jobs)
 
 	wg.Wait()
 
@@ -76,12 +80,10 @@ func (r *Runner) Run() error {
 	return nil
 }
 
-func (r *Runner) RunThread(name string) error {
+func (r *Runner) StartWorker(jobs <-chan string) error {
 	var err error
-	files := r.Files / r.Threads
 
-	for i := uint64(0); i < files; i++ {
-		var fileName strings.Builder
+	for fileName := range jobs {
 		var inputReader io.Reader
 
 		switch r.ReaderType {
@@ -93,18 +95,13 @@ func (r *Runner) RunThread(name string) error {
 			panic("No suitable reader type found")
 		}
 
-		fileName.WriteString(r.Path)
-		fileName.WriteString("/")
-		fileName.WriteString(name)
-		fileName.WriteString("-")
-		fileName.WriteString(strconv.FormatUint(i, 10))
-		fileName.WriteString(".tmp")
-
-		if err = r.Writer.WriteFile(fileName.String(), inputReader); err != nil {
+		if err = r.Writer.WriteFile(fileName, inputReader); err != nil {
 			return err
 		}
 
-		r.Bar.Add(1)
+		if err = r.Bar.Add(1); err != nil {
+			return err
+		}
 	}
 
 	return nil
