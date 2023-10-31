@@ -2,23 +2,26 @@ package runner
 
 import (
 	"fmt"
+	"io"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/mohibeyki/storage-bench/reader"
 	"github.com/mohibeyki/storage-bench/writer"
+	"github.com/schollz/progressbar/v3"
 )
 
 type Runner struct {
-	Path    string
-	Files   uint64
-	Threads uint64
-	Size    uint64
-	Total   *atomic.Uint64
-	Writer  writer.Writer
+	Path       string
+	Files      uint64
+	Threads    uint64
+	Size       uint64
+	Writer     writer.Writer
+	ReaderType reflect.Type
+	Bar        *progressbar.ProgressBar
 }
 
 func formatByteSize(bytes uint64) string {
@@ -38,7 +41,11 @@ func formatByteSize(bytes uint64) string {
 }
 
 func (r *Runner) Run() error {
-	fmt.Printf("Running storage-bench with [%d] files of size [%s] using [%d] threads in [%s]\n", r.Files, formatByteSize(r.Size), r.Threads, r.Path)
+	fmt.Printf("Running storage-bench with [%d] files of size [%s] using [%s] by [%d] threads in [%s]\n", r.Files, formatByteSize(r.Size), r.ReaderType, r.Threads, r.Path)
+
+	r.Bar = progressbar.Default(
+		int64(r.Files),
+	)
 
 	// start timing
 	startTime := time.Now()
@@ -56,21 +63,7 @@ func (r *Runner) Run() error {
 		}(strconv.FormatUint(i, 10))
 	}
 
-	quitWatcher := make(chan bool)
-	go func() {
-		for {
-			select {
-			case <-quitWatcher:
-				return
-			default:
-				fmt.Printf("[%d]/[%d]\n", r.Total.Load(), r.Files)
-				time.Sleep(100 * time.Millisecond)
-			}
-		}
-	}()
-
 	wg.Wait()
-	quitWatcher <- true
 
 	duration := time.Since(startTime)
 	durationMS := duration.Milliseconds()
@@ -89,7 +82,16 @@ func (r *Runner) RunThread(name string) error {
 
 	for i := uint64(0); i < files; i++ {
 		var fileName strings.Builder
-		rr := reader.RandomReader{Size: r.Size}
+		var inputReader io.Reader
+
+		switch r.ReaderType {
+		case reflect.TypeOf(reader.ZeroReader{}):
+			inputReader = &reader.ZeroReader{Reader: reader.Reader{Size: r.Size}}
+		case reflect.TypeOf(reader.RandomReader{}):
+			inputReader = &reader.RandomReader{Reader: reader.Reader{Size: r.Size}}
+		default:
+			panic("No suitable reader type found")
+		}
 
 		fileName.WriteString(r.Path)
 		fileName.WriteString("/")
@@ -98,11 +100,11 @@ func (r *Runner) RunThread(name string) error {
 		fileName.WriteString(strconv.FormatUint(i, 10))
 		fileName.WriteString(".tmp")
 
-		if err = r.Writer.WriteFile(fileName.String(), &rr); err != nil {
+		if err = r.Writer.WriteFile(fileName.String(), inputReader); err != nil {
 			return err
 		}
 
-		r.Total.Add(1)
+		r.Bar.Add(1)
 	}
 
 	return nil

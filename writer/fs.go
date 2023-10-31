@@ -16,7 +16,6 @@ func (w *FSWriter) WriteFile(path string, reader io.Reader) (err error) {
 
 	defer f.Close()
 
-	buf := make([]byte, 64*1024)
-	_, err = io.CopyBuffer(f, reader, buf)
+	_, err = io.Copy(f, reader)
 	return
 }
