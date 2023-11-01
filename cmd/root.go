@@ -47,24 +47,23 @@ It supports local filesystem and s3 storage`,
 		// Input size is in 64KiB
 		runner.Size *= 64 * 1024
 
-		var s3 bool
-		if s3, err = cmd.PersistentFlags().GetBool("s3"); err != nil {
+		if s3, err := cmd.PersistentFlags().GetBool("s3"); err != nil {
 			_ = fmt.Errorf("could not parse size from arguments. [%s]", err)
 			panic(err)
-		}
-
-		if s3 {
-			session, err := session.NewSession(&aws.Config{
-				Region:      aws.String(viper.GetString("region")),
-				Credentials: credentials.NewStaticCredentials(viper.GetString("accessKey"), viper.GetString("secretKey"), "")},
-			)
-			if err != nil {
-				panic(err)
-			}
-
-			runner.Writer = &writer.S3Writer{Bucket: viper.GetString("bucket"), Session: session}
 		} else {
-			runner.Writer = &writer.FSWriter{}
+			if s3 {
+				session, err := session.NewSession(&aws.Config{
+					Region:      aws.String(viper.GetString("region")),
+					Credentials: credentials.NewStaticCredentials(viper.GetString("accessKey"), viper.GetString("secretKey"), "")},
+				)
+				if err != nil {
+					panic(err)
+				}
+
+				runner.Writer = &writer.S3Writer{Bucket: viper.GetString("bucket"), Session: session}
+			} else {
+				runner.Writer = &writer.FSWriter{}
+			}
 		}
 
 		if zero, err := cmd.PersistentFlags().GetBool("zero"); err != nil {
