@@ -1,13 +1,14 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"reflect"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/mohibeyki/storage-bench/reader"
 	"github.com/mohibeyki/storage-bench/runner"
 	"github.com/mohibeyki/storage-bench/writer"
@@ -47,20 +48,23 @@ It supports local filesystem and s3 storage`,
 		// Input size is in 64KiB
 		runner.Size *= 64 * 1024
 
-		if s3, err := cmd.PersistentFlags().GetBool("s3"); err != nil {
+		if isS3, err := cmd.PersistentFlags().GetBool("s3"); err != nil {
 			_ = fmt.Errorf("could not parse size from arguments. [%s]", err)
 			panic(err)
 		} else {
-			if s3 {
-				session, err := session.NewSession(&aws.Config{
-					Region:      aws.String(viper.GetString("region")),
-					Credentials: credentials.NewStaticCredentials(viper.GetString("accessKey"), viper.GetString("secretKey"), "")},
+			if isS3 {
+				cfg, err := config.LoadDefaultConfig(context.TODO(),
+					config.WithRegion(viper.GetString("region")),
+					config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(viper.GetString("accessKey"), viper.GetString("secretKey"), "")),
 				)
+
 				if err != nil {
 					panic(err)
 				}
 
-				runner.Writer = &writer.S3Writer{Bucket: viper.GetString("bucket"), Session: session}
+				client := s3.NewFromConfig(cfg)
+
+				runner.Writer = &writer.S3Writer{Bucket: viper.GetString("bucket"), Client: client}
 			} else {
 				runner.Writer = &writer.FSWriter{}
 			}
