@@ -16,7 +16,6 @@ type S3Writer struct {
 }
 
 func (w *S3Writer) WriteFile(path string, reader io.Reader) (err error) {
-
 	uploader := manager.NewUploader(w.Client, func(u *manager.Uploader) {
 		u.PartSize = 10 * 1024 * 1024
 	})

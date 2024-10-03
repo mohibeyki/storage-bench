@@ -5,8 +5,7 @@ import (
 	"os"
 )
 
-type FSWriter struct {
-}
+type FSWriter struct{}
 
 func (w *FSWriter) WriteFile(path string, reader io.Reader) (err error) {
 	f, err := os.Create(path)

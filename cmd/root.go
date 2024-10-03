@@ -57,7 +57,6 @@ It supports local filesystem and s3 storage`,
 					config.WithRegion(viper.GetString("region")),
 					config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(viper.GetString("accessKey"), viper.GetString("secretKey"), "")),
 				)
-
 				if err != nil {
 					panic(err)
 				}
